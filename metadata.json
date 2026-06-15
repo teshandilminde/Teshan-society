@@ -1,0 +1,6 @@
+{
+  "name": "Teshan Society",
+  "description": "Teshan society interface featuring a custom smooth transition vertical slide system, an entry typing animation, and a modern glass-styled sticky navigation bar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

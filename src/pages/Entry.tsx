@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { signInWithGoogle } from '../firebase';
-import { saveUserToFirestore } from '../db/users';
 
 export default function Entry({ onLogin }: { onLogin: (email: string) => void }) {
   const [displayedText, setDisplayedText] = useState("");
@@ -36,13 +35,10 @@ export default function Entry({ onLogin }: { onLogin: (email: string) => void })
     if (isLoggingIn) return;
     setIsLoggingIn(true);
     try {
-      const result = await signInWithGoogle();
-      const user = result.user;
-      await saveUserToFirestore(user);
-      onLogin(user.email || '');
+      await signInWithGoogle();
+      // Flow will be interrupted by redirect
     } catch (error) {
       console.error("Login failed:", error);
-    } finally {
       setIsLoggingIn(false);
     }
   };

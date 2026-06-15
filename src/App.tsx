@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
+import { saveUserToFirestore } from './db/users';
 import Entry from './pages/Entry';
 import Main from './pages/Main';
 import Admin from './pages/Admin';
@@ -21,6 +22,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
+        saveUserToFirestore(user).catch(console.error);
         if (user.email === 'teshandilminde@gmail.com') {
           setIsAdmin(true);
           setCurrentPage('admin');

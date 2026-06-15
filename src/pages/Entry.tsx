@@ -35,8 +35,10 @@ export default function Entry({ onLogin }: { onLogin: (email: string) => void })
     if (isLoggingIn) return;
     setIsLoggingIn(true);
     try {
-      await signInWithGoogle();
-      // Flow will be interrupted by redirect
+      const result = await signInWithGoogle();
+      if (result && result.user) {
+        onLogin(result.user.email || '');
+      }
     } catch (error) {
       console.error("Login failed:", error);
       setIsLoggingIn(false);

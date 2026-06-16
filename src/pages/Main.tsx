@@ -5,6 +5,7 @@ import { auth, signOutUser } from '../firebase';
 import { Slide, getSlides } from '../db/slides';
 import { DynamicSlide } from '../components/DynamicSlide';
 import { Comments } from '../components/Comments';
+import { ProfileSidebar } from '../components/ProfileSidebar';
 
 interface MainProps {
   isAdmin: boolean;
@@ -14,7 +15,11 @@ export default function Main({ isAdmin }: MainProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [slides, setSlides] = useState<Slide[]>([]);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'main' | 'slides'>('main');
+
+  const user = auth.currentUser;
+  const pfpUrl = user?.photoURL || `https://api.dicebear.com/7.x/shapes/svg?seed=${user?.uid}`;
 
   useEffect(() => {
     const unsubscribe = getSlides(isAdmin, (loaded) => {
@@ -85,11 +90,13 @@ export default function Main({ isAdmin }: MainProps) {
           >
             <div className="absolute top-8 right-8 z-50">
               <button 
-                onClick={() => signOutUser()}
-                className="p-3 bg-gradient-to-b from-white/10 to-white/5 backdrop-blur-md border border-white/10 border-t-white/30 border-l-white/20 rounded-[18px] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.8),inset_0_2px_4px_rgba(255,255,255,0.2),inset_0_-2px_4px_rgba(255,255,255,0.05)] transition-all duration-300 hover:bg-white/20 active:scale-95 text-white/50 hover:text-white"
-                title="Log Out"
+                onClick={() => setIsProfileOpen(true)}
+                className="w-14 h-14 bg-gradient-to-b from-white/10 to-white/5 backdrop-blur-md border border-white/10 border-t-white/30 border-l-white/20 rounded-full shadow-[0_20px_40px_-10px_rgba(0,0,0,0.8),inset_0_2px_4px_rgba(255,255,255,0.2),inset_0_-2px_4px_rgba(255,255,255,0.05)] transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center overflow-hidden p-1"
+                title="Profile"
               >
-                <LogOut size={20} />
+                <div className="w-full h-full rounded-full overflow-hidden bg-black">
+                  <img src={pfpUrl} alt="pfp" className="w-full h-full object-cover" />
+                </div>
               </button>
             </div>
             <h1 className="text-2xl font-serif text-white/50 tracking-widest mb-12">All Slides</h1>
@@ -209,6 +216,8 @@ export default function Main({ isAdmin }: MainProps) {
       <div className="fixed bottom-3 w-full text-center font-mono text-[10px] uppercase tracking-[4px] opacity-30 pointer-events-none z-40">
         pages/{activeTab}
       </div>
+
+      <ProfileSidebar isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
     </motion.div>
   );
 }

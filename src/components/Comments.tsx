@@ -201,16 +201,16 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
 
   return (
     <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div 
+      {isOpen && <motion.div 
+            key="backdrop"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[60] bg-black/60 md:hidden backdrop-blur-sm"
             onClick={onClose}
-          />
-          <motion.div
+          />}
+      {isOpen && <motion.div
+            key="modal"
             initial={{ y: '100%', x: 0 }}
             animate={{ y: 0, x: 0 }}
             exit={{ y: '100%', x: 0 }}
@@ -245,9 +245,10 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
                  </button>
                </div>
              </div>
-          </motion.div>
+          </motion.div>}
 
-          <motion.div
+      {isOpen && <motion.div
+            key="desktop-modal"
             initial={{ x: '-100%', y: 0 }}
             animate={{ x: 0, y: 0 }}
             exit={{ x: '-100%', y: 0 }}
@@ -282,9 +283,7 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
                  </button>
                </div>
              </div>
-          </motion.div>
-        </>
-      )}
+          </motion.div>}
     </AnimatePresence>
   );
 }

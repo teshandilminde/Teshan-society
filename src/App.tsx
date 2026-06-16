@@ -27,12 +27,17 @@ export default function App() {
           setIsAdmin(true);
           setCurrentPage('admin');
         } else {
-          setIsAdmin(false);
-          setCurrentPage('main');
+          // Only redirect to main if we aren't already an admin
+          setIsAdmin((prev) => {
+             if (!prev) setCurrentPage('main');
+             return prev;
+          });
         }
       } else {
-        setCurrentPage('entry');
-        setIsAdmin(false);
+        setIsAdmin((prev) => {
+           if (!prev) setCurrentPage('entry');
+           return prev;
+        });
       }
       setIsAuthLoading(false);
     });
@@ -40,8 +45,8 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const handleLogin = (email: string) => {
-    if (email === 'teshandilminde@gmail.com') {
+  const handleLogin = (email: string, asAdmin: boolean = false) => {
+    if (asAdmin || email === 'teshandilminde@gmail.com') {
       setIsAdmin(true);
       setCurrentPage('admin');
     } else {

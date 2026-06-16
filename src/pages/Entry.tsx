@@ -231,7 +231,7 @@ export default function Entry({ onLogin }: EntryProps) {
                           </motion.div>
                        </motion.div>
                        <motion.span layoutId="continue-text" className="font-mono text-sm tracking-widest uppercase mt-[2px] whitespace-nowrap">
-                         Continue (Sign In / Log In)
+                         Continue
                        </motion.span>
                     </div>
                 )}

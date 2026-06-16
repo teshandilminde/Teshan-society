@@ -1,4 +1,15 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  updateDoc, 
+  query, 
+  onSnapshot, 
+  runTransaction 
+} from 'firebase/firestore';
+import { db } from './firebase';
 
 export interface LocalUser {
   email: string;
@@ -39,14 +50,47 @@ interface DatabaseContextType {
 
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+  };
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null, userId?: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: userId || null,
+      email: null,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<LocalUser | null>(null);
   const [users, setUsers] = useState<LocalUser[]>([]);
   const [comments, setComments] = useState<LocalComment[]>([]);
 
+  // 1. Synchronize local credentials & accounts from localStorage
   useEffect(() => {
     const storedUsers = localStorage.getItem('local_db_users');
-    const storedComments = localStorage.getItem('local_db_comments');
     const storedActiveUser = localStorage.getItem('local_db_active_user');
 
     if (storedUsers) {
@@ -57,26 +101,53 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setUsers(defaultUsers);
     }
 
-    if (storedComments) {
-      setComments(JSON.parse(storedComments));
-    } else {
-      localStorage.setItem('local_db_comments', JSON.stringify([]));
-      setComments([]);
-    }
-
     if (storedActiveUser) {
       setCurrentUser(JSON.parse(storedActiveUser));
     }
   }, []);
 
+  // 2. Clear real-time comments synchronization from Firebase Firestore
+  useEffect(() => {
+    const q = query(collection(db, 'comments'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedComments = snapshot.docs.map(doc => {
+        const data = doc.data();
+        let createdAt = Date.now();
+        if (data.createdAt) {
+          if (typeof data.createdAt.toMillis === 'function') {
+            createdAt = data.createdAt.toMillis();
+          } else if (typeof data.createdAt === 'number') {
+            createdAt = data.createdAt;
+          } else if (data.createdAt.seconds) {
+            createdAt = data.createdAt.seconds * 1000;
+          }
+        }
+        return {
+          id: doc.id,
+          slideId: data.slideId || '',
+          parentId: data.parentId || null,
+          text: data.text || '',
+          userId: data.userId || '',
+          userName: data.userName || 'Anonymous',
+          userPhoto: data.userPhoto || '',
+          likes: data.likes || 0,
+          dislikes: data.dislikes || 0,
+          likedBy: data.likedBy || [],
+          dislikedBy: data.dislikedBy || [],
+          createdAt
+        } as LocalComment;
+      });
+      setComments(fetchedComments);
+    }, (error) => {
+      console.error("Firestore comments onSnapshot Error:", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const persistUsers = (newUsers: LocalUser[]) => {
     setUsers(newUsers);
     localStorage.setItem('local_db_users', JSON.stringify(newUsers));
-  };
-
-  const persistComments = (newComments: LocalComment[]) => {
-    setComments(newComments);
-    localStorage.setItem('local_db_comments', JSON.stringify(newComments));
   };
 
   const persistCurrentUser = (user: LocalUser | null) => {
@@ -131,13 +202,22 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     persistUsers(updatedUsers);
     persistCurrentUser(updatedUser);
 
-    const updatedComments = comments.map(c => {
-      if (c.userId === currentUser.uid) {
-        return { ...c, userName: username, userPhoto: pfpUrl };
-      }
-      return c;
-    });
-    persistComments(updatedComments);
+    // Update their username and photo in Firestore comments where userId === currentUser.uid
+    try {
+      const userComments = comments.filter(c => c.userId === currentUser.uid);
+      await Promise.all(userComments.map(async (c) => {
+        try {
+          await updateDoc(doc(db, 'comments', c.id), {
+            userName: username,
+            userPhoto: pfpUrl
+          });
+        } catch (e) {
+          console.error(`Failed to update user details on comment ${c.id}:`, e);
+        }
+      }));
+    } catch (err) {
+      console.error("Error updating user bio in comments:", err);
+    }
   };
 
   const getCommentsForSlide = (slideId: string): LocalComment[] => {
@@ -146,29 +226,39 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const addComment = async (slideId: string, parentId: string | null, text: string) => {
     if (!currentUser) return;
-    const newComment: LocalComment = {
-      id: 'comment_' + Math.random().toString(36).substr(2, 9),
+    const commentId = 'comment_' + Math.random().toString(36).substr(2, 9);
+    const newComment: Omit<LocalComment, 'id'> = {
       slideId,
       parentId,
       text,
       userId: currentUser.uid,
       userName: currentUser.username,
-      userPhoto: currentUser.pfpUrl,
+      userPhoto: currentUser.pfpUrl || '',
       likes: 0,
       dislikes: 0,
       likedBy: [],
       dislikedBy: [],
       createdAt: Date.now()
     };
-    persistComments([...comments, newComment]);
+
+    try {
+      await setDoc(doc(db, 'comments', commentId), newComment);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `comments/${commentId}`, currentUser.uid);
+    }
   };
 
   const editComment = async (id: string, text: string) => {
-    const updated = comments.map(c => c.id === id ? { ...c, text } : c);
-    persistComments(updated);
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, 'comments', id), { text });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `comments/${id}`, currentUser.uid);
+    }
   };
 
   const deleteComment = async (id: string) => {
+    if (!currentUser) return;
     const filterOut = (parentId: string): string[] => {
       let ids = [parentId];
       const childs = comments.filter(c => c.parentId === parentId);
@@ -178,18 +268,28 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return ids;
     };
     const idsToRemove = filterOut(id);
-    const updated = comments.filter(c => !idsToRemove.includes(c.id));
-    persistComments(updated);
+    try {
+      await Promise.all(
+        idsToRemove.map(cid => deleteDoc(doc(db, 'comments', cid)))
+      );
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `comments/${id}`, currentUser.uid);
+    }
   };
 
   const voteComment = async (id: string, type: 'like' | 'dislike') => {
     if (!currentUser) return;
-    const countLikes = comments.map(c => {
-      if (c.id === id) {
-        let likes = c.likes || 0;
-        let dislikes = c.dislikes || 0;
-        let likedBy = c.likedBy || [];
-        let dislikedBy = c.dislikedBy || [];
+    try {
+      const commentRef = doc(db, 'comments', id);
+      await runTransaction(db, async (transaction) => {
+        const docSnap = await transaction.get(commentRef);
+        if (!docSnap.exists()) return;
+
+        const data = docSnap.data() as LocalComment;
+        let likes = data.likes || 0;
+        let dislikes = data.dislikes || 0;
+        let likedBy = data.likedBy || [];
+        let dislikedBy = data.dislikedBy || [];
 
         const isLiked = likedBy.includes(currentUser.uid);
         const isDisliked = dislikedBy.includes(currentUser.uid);
@@ -220,11 +320,16 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           }
         }
 
-        return { ...c, likes, dislikes, likedBy, dislikedBy };
-      }
-      return c;
-    });
-    persistComments(countLikes);
+        transaction.update(commentRef, {
+          likes,
+          dislikes,
+          likedBy,
+          dislikedBy
+        });
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `comments/${id}`, currentUser.uid);
+    }
   };
 
   return (

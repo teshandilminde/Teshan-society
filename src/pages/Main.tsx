@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { ListTodo, Folder, MessageSquare, ChevronUp, ChevronDown, LogOut } from 'lucide-react';
+import { ListTodo, Folder, MessageSquare, ChevronUp, ChevronDown } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { auth, signOutUser } from '../firebase';
+import { useDatabase } from '../database';
 import { Slide, getSlides } from '../db/slides';
 import { DynamicSlide } from '../components/DynamicSlide';
 import { Comments } from '../components/Comments';
@@ -12,14 +12,14 @@ interface MainProps {
 }
 
 export default function Main({ isAdmin }: MainProps) {
+  const { currentUser } = useDatabase();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [slides, setSlides] = useState<Slide[]>([]);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'main' | 'slides'>('main');
 
-  const user = auth.currentUser;
-  const pfpUrl = user?.photoURL || `https://api.dicebear.com/7.x/shapes/svg?seed=${user?.uid}`;
+  const pfpUrl = currentUser?.pfpUrl || `https://api.dicebear.com/7.x/shapes/svg?seed=${currentUser?.uid || 'guest'}`;
 
   useEffect(() => {
     const unsubscribe = getSlides(isAdmin, (loaded) => {
@@ -46,7 +46,6 @@ export default function Main({ isAdmin }: MainProps) {
       transition={{ duration: 1 }}
       className="relative h-screen w-full bg-black text-white font-sans overflow-hidden"
     >
-      {/* Slides Container */}
       <AnimatePresence mode="wait">
         {activeTab === 'main' ? (
           <motion.div
@@ -122,7 +121,6 @@ export default function Main({ isAdmin }: MainProps) {
         )}
       </AnimatePresence>
 
-      {/* Comments Sidebar (Always rendered but handles its own presence/visibility) */}
       {currentSlideData && activeTab === 'main' && (
         <Comments 
           slideId={currentSlideData.id} 
@@ -131,10 +129,7 @@ export default function Main({ isAdmin }: MainProps) {
         />
       )}
 
-      {/* Floating Sticky Nav Bar & Controls */}
       <div className="fixed bottom-8 left-0 right-0 z-50 flex justify-center items-center gap-2 pointer-events-none px-4">
-        
-        {/* Comment Button */}
         <AnimatePresence>
           {currentSlideData?.commentsEnabled && !isCommentsOpen && activeTab === 'main' && (
             <motion.div
@@ -153,7 +148,6 @@ export default function Main({ isAdmin }: MainProps) {
           )}
         </AnimatePresence>
 
-        {/* Real Nav Bar */}
         <div className="pointer-events-auto flex items-center p-1.5 bg-white-[0.02] backdrop-blur-xl border border-white/10 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex-shrink-0">
           <button 
             onClick={() => setActiveTab('main')}
@@ -184,7 +178,6 @@ export default function Main({ isAdmin }: MainProps) {
           </button>
         </div>
 
-        {/* Up/Down Navigation Buttons */}
         <AnimatePresence>
           {activeTab === 'main' && (
             <motion.div 
@@ -212,7 +205,6 @@ export default function Main({ isAdmin }: MainProps) {
         </AnimatePresence>
       </div>
 
-      {/* Pages Indicator - fixed to viewport bottom */}
       <div className="fixed bottom-3 w-full text-center font-mono text-[10px] uppercase tracking-[4px] opacity-30 pointer-events-none z-40">
         pages/{activeTab}
       </div>

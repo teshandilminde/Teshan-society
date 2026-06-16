@@ -8,7 +8,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 type SlideType = 'project' | 'skill' | 'animation' | 'other';
 type Privacy = 'public' | 'private';
 
-export default function Admin() {
+export default function Admin({ onLogout }: { onLogout?: () => void }) {
   const [slides, setSlides] = useState<Slide[]>([]);
 
   useEffect(() => {
@@ -198,7 +198,7 @@ export default function Admin() {
                   <Plus size={20} className="text-white" />
                </button>
                <button 
-                  onClick={() => signOutUser()}
+                  onClick={() => onLogout ? onLogout() : signOutUser()}
                   className="p-3 bg-gradient-to-b from-white/10 to-white/5 backdrop-blur-md border border-white/10 border-t-white/30 border-l-white/20 rounded-[18px] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.8),inset_0_2px_4px_rgba(255,255,255,0.2),inset_0_-2px_4px_rgba(255,255,255,0.05)] transition-all duration-300 hover:bg-white/20 active:scale-95 text-white/50 hover:text-white"
                   title="Log Out"
                >

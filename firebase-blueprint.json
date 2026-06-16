@@ -6,6 +6,7 @@
       "type": "object",
       "properties": {
         "email": { "type": "string" },
+        "password": { "type": "string" },
         "displayName": { "type": "string" },
         "photoURL": { "type": "string" },
         "createdAt": { "type": "timestamp" },

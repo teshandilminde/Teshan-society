@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, MessageSquare, ThumbsUp, ThumbsDown, Send, Pencil, Trash2 } from 'lucide-react';
-import { Comment, getCommentsForSlide, addComment, voteComment, editComment, deleteComment } from '../db/comments';
-import { auth } from '../firebase';
+import { useDatabase, LocalComment } from '../database';
 
 interface CommentsProps {
   slideId: string;
@@ -11,7 +10,7 @@ interface CommentsProps {
 }
 
 export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
-  const [comments, setComments] = useState<Comment[]>([]);
+  const { currentUser, getCommentsForSlide, addComment, editComment, deleteComment, voteComment } = useDatabase();
   const [newComment, setNewComment] = useState('');
   const [replyText, setReplyText] = useState('');
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -19,22 +18,17 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
 
-  useEffect(() => {
-    if (isOpen && slideId) {
-      const unsub = getCommentsForSlide(slideId, setComments);
-      return () => unsub();
-    }
-  }, [slideId, isOpen]);
+  const comments = getCommentsForSlide(slideId);
 
   const handlePostComment = async () => {
-    if (!newComment.trim() || !auth.currentUser) return;
-    await addComment(slideId, null, newComment, auth.currentUser);
+    if (!newComment.trim() || !currentUser) return;
+    await addComment(slideId, null, newComment);
     setNewComment('');
   };
 
   const handlePostReply = async (parentId: string) => {
-    if (!replyText.trim() || !auth.currentUser) return;
-    await addComment(slideId, parentId, replyText, auth.currentUser);
+    if (!replyText.trim() || !currentUser) return;
+    await addComment(slideId, parentId, replyText);
     setReplyText('');
     setReplyingTo(null);
     setExpandedReplies(prev => ({ ...prev, [parentId]: true }));
@@ -58,26 +52,22 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
     if (!acc[c.parentId!]) acc[c.parentId!] = [];
     acc[c.parentId!].push(c);
     return acc;
-  }, {} as Record<string, Comment[]>);
+  }, {} as Record<string, LocalComment[]>);
 
   const toggleReplies = (id: string) => {
     setExpandedReplies(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const getAllReplies = (id: string): Comment[] => {
+  const getAllReplies = (id: string): LocalComment[] => {
     const direct = repliesByParent[id] || [];
     let all = [...direct];
     for (const r of direct) {
       all = [...all, ...getAllReplies(r.id)];
     }
-    return all.sort((a, b) => {
-      const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-      const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
-      return timeA - timeB;
-    });
+    return all.sort((a, b) => a.createdAt - b.createdAt);
   };
 
-  const renderComment = (comment: Comment, isReply = false) => {
+  const renderComment = (comment: LocalComment, isReply = false) => {
     const allDescendantReplies = getAllReplies(comment.id);
     const isExpanded = expandedReplies[comment.id];
     const isReplying = replyingTo === comment.id;
@@ -85,7 +75,7 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
     return (
       <div key={comment.id} className={`flex gap-3 w-full ${isReply ? 'mt-3' : 'mt-6'}`}>
         <img 
-           src={comment.userPhoto || `https://ui-avatars.com/api/?name=${comment.userName}&background=random`} 
+           src={comment.userPhoto || `https://api.dicebear.com/7.x/shapes/svg?seed=${comment.userId}`} 
            className="w-10 h-10 rounded-full bg-white/10" 
            alt="profile" 
         />
@@ -93,14 +83,14 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
           <div className="flex items-baseline gap-2">
             <span className="font-semibold text-white/90 text-sm">{comment.userName}</span>
             <span className="text-white/40 text-[10px]">
-              {comment.createdAt?.toDate ? comment.createdAt.toDate().toLocaleDateString() : 'Just now'}
+              {new Date(comment.createdAt).toLocaleDateString()}
             </span>
-            {auth.currentUser && auth.currentUser.uid === comment.userId && (
+            {currentUser && currentUser.uid === comment.userId && (
               <div className="ml-auto flex items-center gap-2 text-white/30">
-                <button onClick={() => { setEditingCommentId(comment.id); setEditingText(comment.text); }} className="hover:text-white transition-colors">
+                <button onClick={() => { setEditingCommentId(comment.id); setEditingText(comment.text); }} className="hover:text-white transition-colors cursor-pointer">
                   <Pencil size={12} />
                 </button>
-                <button onClick={() => handleDeleteComment(comment.id)} className="hover:text-red-400 transition-colors">
+                <button onClick={() => handleDeleteComment(comment.id)} className="hover:text-red-400 transition-colors cursor-pointer">
                   <Trash2 size={12} />
                 </button>
               </div>
@@ -116,19 +106,19 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
                 className="flex-1 bg-white/5 border border-white/20 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-white/40"
                 onKeyDown={(e) => e.key === 'Enter' && handleEditComment(comment.id)}
               />
-              <button onClick={() => handleEditComment(comment.id)} className="text-xs bg-white/10 px-2 rounded hover:bg-white/20">Save</button>
-              <button onClick={() => setEditingCommentId(null)} className="text-xs text-white/50 hover:text-white">Cancel</button>
+              <button onClick={() => handleEditComment(comment.id)} className="text-xs bg-white/10 px-2 rounded hover:bg-white/20 cursor-pointer">Save</button>
+              <button onClick={() => setEditingCommentId(null)} className="text-xs text-white/50 hover:text-white cursor-pointer">Cancel</button>
             </div>
           ) : (
             <p className="text-white/70 text-sm mt-1">{comment.text}</p>
           )}
           
           <div className="flex items-center gap-4 mt-2 text-white/40 text-[10px] md:text-xs">
-            <button onClick={() => { if (auth.currentUser) voteComment(comment.id, auth.currentUser.uid, 'like') }} className="flex items-center gap-1 hover:text-white transition-colors">
-              <ThumbsUp className={`w-3 h-3 md:w-[14px] md:h-[14px] ${auth.currentUser && comment.likedBy?.includes(auth.currentUser.uid) ? 'text-blue-400 fill-blue-400' : ''}`} /> {comment.likes}
+            <button onClick={() => voteComment(comment.id, 'like')} className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer">
+              <ThumbsUp className={`w-3 h-3 md:w-[14px] md:h-[14px] ${currentUser && comment.likedBy?.includes(currentUser.uid) ? 'text-blue-400 fill-blue-400' : ''}`} /> {comment.likes}
             </button>
-            <button onClick={() => { if (auth.currentUser) voteComment(comment.id, auth.currentUser.uid, 'dislike') }} className="flex items-center gap-1 hover:text-white transition-colors">
-              <ThumbsDown className={`w-3 h-3 md:w-[14px] md:h-[14px] ${auth.currentUser && comment.dislikedBy?.includes(auth.currentUser.uid) ? 'text-blue-400 fill-blue-400' : ''}`} /> {comment.dislikes}
+            <button onClick={() => voteComment(comment.id, 'dislike')} className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer">
+              <ThumbsDown className={`w-3 h-3 md:w-[14px] md:h-[14px] ${currentUser && comment.dislikedBy?.includes(currentUser.uid) ? 'text-blue-400 fill-blue-400' : ''}`} /> {comment.dislikes}
             </button>
             <button 
                onClick={() => {
@@ -139,7 +129,7 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
                    setReplyText(`@${comment.userName} `);
                  }
                }} 
-               className="flex items-center gap-1 hover:text-white transition-colors"
+               className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
             >
               <MessageSquare className="w-3 h-3 md:w-[14px] md:h-[14px]" /> Reply
             </button>
@@ -162,7 +152,7 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
               />
               <button 
                 onClick={() => handlePostReply(comment.id)} 
-                className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors"
+                className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors cursor-pointer"
               >
                 <Send size={16} />
               </button>
@@ -172,7 +162,7 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
           {!isReply && allDescendantReplies.length > 0 && (
             <button 
               onClick={() => toggleReplies(comment.id)}
-              className="text-white/50 text-xs mt-3 font-semibold hover:text-white transition-colors flex items-center gap-2"
+              className="text-white/50 text-xs mt-3 font-semibold hover:text-white transition-colors flex items-center gap-2 cursor-pointer"
             >
               <div className="h-px w-6 bg-white/20" />
               {isExpanded ? 'Hide replies' : `${allDescendantReplies.length} replies`}
@@ -217,17 +207,16 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
             transition={{ duration: 1, ease: "easeInOut" }}
             className="fixed bottom-0 left-0 right-0 h-[80vh] bg-neutral-900 border-t border-white/10 rounded-t-3xl z-[60] flex flex-col md:hidden"
           >
-             {/* Mobile View */}
              <div className="flex justify-between items-center p-6 border-b border-white/10">
                 <h2 className="text-xl font-bold text-white">Comments</h2>
-                <button onClick={onClose} className="p-2 bg-white/5 rounded-full hover:bg-white/10">
+                <button onClick={onClose} className="p-2 bg-white/5 rounded-full hover:bg-white/10 cursor-pointer">
                    <ArrowRight size={20} className="rotate-90 text-white/50" />
                 </button>
              </div>
              
              <div className="flex-1 overflow-y-auto p-6 pt-0">
-               {mainComments.map(c => renderComment(c))}
-               {mainComments.length === 0 && <p className="text-white/30 text-center mt-10">No comments yet</p>}
+                {mainComments.map(c => renderComment(c))}
+                {mainComments.length === 0 && <p className="text-white/30 text-center mt-10">No comments yet</p>}
              </div>
              
              <div className="p-4 border-t border-white/10 bg-neutral-900/50 backdrop-blur-md pb-8">
@@ -240,7 +229,7 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
                    className="flex-1 bg-white/5 border border-white/10 rounded-full px-4 py-3 text-sm text-white focus:outline-none focus:border-white/30"
                    onKeyDown={e => e.key === 'Enter' && handlePostComment()}
                  />
-                 <button onClick={handlePostComment} className="bg-white/10 p-3 rounded-full hover:bg-white/20 transition-colors">
+                 <button onClick={handlePostComment} className="bg-white/10 p-3 rounded-full hover:bg-white/20 transition-colors cursor-pointer">
                    <Send size={18} />
                  </button>
                </div>
@@ -255,17 +244,16 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
             transition={{ duration: 1, ease: "easeInOut" }}
             className="hidden md:flex fixed top-0 bottom-0 left-0 w-[400px] bg-neutral-900 border-r border-white/10 z-[60] flex-col"
           >
-             {/* Desktop View */}
              <div className="flex justify-between items-center p-6 border-b border-white/10">
                 <h2 className="text-xl font-bold text-white">Comments</h2>
-                <button onClick={onClose} className="p-2 bg-white/5 rounded-full hover:bg-white/10">
+                <button onClick={onClose} className="p-2 bg-white/5 rounded-full hover:bg-white/10 cursor-pointer">
                    <ArrowRight size={20} className="text-white/50 rotate-180" />
                 </button>
              </div>
              
              <div className="flex-1 overflow-y-auto p-6 pt-0">
-               {mainComments.map(c => renderComment(c))}
-               {mainComments.length === 0 && <p className="text-white/30 text-center mt-10">No comments yet</p>}
+                {mainComments.map(c => renderComment(c))}
+                {mainComments.length === 0 && <p className="text-white/30 text-center mt-10">No comments yet</p>}
              </div>
              
              <div className="p-4 border-t border-white/10 bg-neutral-900/50 backdrop-blur-md">
@@ -278,7 +266,7 @@ export function Comments({ slideId, isOpen, onClose }: CommentsProps) {
                    className="flex-1 bg-white/5 border border-white/10 rounded-full px-4 py-3 text-sm text-white focus:outline-none focus:border-white/30"
                    onKeyDown={e => e.key === 'Enter' && handlePostComment()}
                  />
-                 <button onClick={handlePostComment} className="bg-white/10 p-3 rounded-full hover:bg-white/20 transition-colors">
+                 <button onClick={handlePostComment} className="bg-white/10 p-3 rounded-full hover:bg-white/20 transition-colors cursor-pointer">
                    <Send size={18} />
                  </button>
                </div>

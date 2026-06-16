@@ -1,13 +1,5 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './firebase';
-import { saveUserToFirestore } from './db/users';
+import { useDatabase } from './database';
 import Entry from './pages/Entry';
 import Main from './pages/Main';
 import Admin from './pages/Admin';
@@ -15,35 +7,25 @@ import Admin from './pages/Admin';
 export type Page = 'entry' | 'main' | 'admin';
 
 export default function App() {
+  const { currentUser, customLogout } = useDatabase();
   const [currentPage, setCurrentPage] = useState<Page>('entry');
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        saveUserToFirestore(user).catch(console.error);
-        if (user.email === 'teshandilminde@gmail.com') {
-          setIsAdmin(true);
-          setCurrentPage('admin');
-        } else {
-          // Only redirect to main if we aren't already an admin
-          setIsAdmin((prev) => {
-             if (!prev) setCurrentPage('main');
-             return prev;
-          });
-        }
+    if (currentUser) {
+      if (currentUser.email === 'teshandilminde@gmail.com' || isAdmin) {
+        setIsAdmin(true);
+        setCurrentPage('admin');
       } else {
-        setIsAdmin((prev) => {
-           if (!prev) setCurrentPage('entry');
-           return prev;
-        });
+        setIsAdmin(false);
+        setCurrentPage('main');
       }
-      setIsAuthLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
+    } else {
+      if (!isAdmin) {
+        setCurrentPage('entry');
+      }
+    }
+  }, [currentUser, isAdmin]);
 
   const handleLogin = (email: string, asAdmin: boolean = false) => {
     if (asAdmin || email === 'teshandilminde@gmail.com') {
@@ -55,19 +37,17 @@ export default function App() {
     }
   };
 
-  if (isAuthLoading) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-black">
-        <div className="w-8 h-8 rounded-full border-2 border-white/20 border-t-white animate-spin" />
-      </div>
-    );
-  }
+  const handleAdminLogout = () => {
+    setIsAdmin(false);
+    customLogout();
+    setCurrentPage('entry');
+  };
 
   return (
     <>
       {currentPage === 'entry' && <Entry onLogin={handleLogin} />}
       {currentPage === 'main' && <Main isAdmin={isAdmin} />}
-      {currentPage === 'admin' && <Admin />}
+      {currentPage === 'admin' && <Admin onLogout={handleAdminLogout} />}
     </>
   );
 }

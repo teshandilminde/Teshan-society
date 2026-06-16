@@ -1,10 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Pen, LogOut, Camera, X, Loader2 } from 'lucide-react';
-import { auth, storage, db, signOutUser } from '../firebase';
-import { updateProfile, updateEmail, updatePassword } from 'firebase/auth';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { useDatabase } from '../database';
 
 interface ProfileSidebarProps {
   isOpen: boolean;
@@ -12,71 +9,56 @@ interface ProfileSidebarProps {
 }
 
 export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose }) => {
-  const user = auth.currentUser;
+  const { currentUser, updateUserBio, customLogout } = useDatabase();
   
   const [isEditing, setIsEditing] = useState(false);
-  const [username, setUsername] = useState(user?.displayName || '');
+  const [username, setUsername] = useState(currentUser?.username || '');
   const [password, setPassword] = useState('');
-  const [pfpUrl, setPfpUrl] = useState(user?.photoURL || `https://api.dicebear.com/7.x/shapes/svg?seed=${user?.uid}`);
+  const [pfpUrl, setPfpUrl] = useState(currentUser?.pfpUrl || `https://api.dicebear.com/7.x/shapes/svg?seed=guest`);
   const [isSaving, setIsSaving] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (user && !isEditing) {
-      setUsername(user.displayName || '');
-      setPfpUrl(user.photoURL || `https://api.dicebear.com/7.x/shapes/svg?seed=${user.uid}`);
+    if (currentUser && !isEditing) {
+      setUsername(currentUser.username);
+      setPfpUrl(currentUser.pfpUrl || `https://api.dicebear.com/7.x/shapes/svg?seed=${currentUser.uid}`);
     }
-  }, [user, isEditing]);
+  }, [currentUser, isEditing]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && user) {
+    if (file && currentUser) {
+      setIsSaving(true);
       try {
-        setIsSaving(true);
-        const pfpRef = ref(storage, `pfps/${user.uid}_${Date.now()}`);
-        await uploadBytes(pfpRef, file);
-        const url = await getDownloadURL(pfpRef);
-        await updateProfile(user, { photoURL: url });
-        await setDoc(doc(db, 'users', user.uid), { photoURL: url }, { merge: true });
-        setPfpUrl(url);
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const dataUrl = event.target?.result as string;
+          if (dataUrl) {
+            await updateUserBio(username, dataUrl);
+            setPfpUrl(dataUrl);
+            setIsSaving(false);
+          }
+        };
+        reader.onerror = () => {
+          setIsSaving(false);
+        };
+        reader.readAsDataURL(file);
       } catch (err) {
-        console.error("Error updating image", err);
-      } finally {
+        console.error(err);
         setIsSaving(false);
       }
     }
   };
 
   const handleSave = async () => {
-    if (!user) return;
+    if (!currentUser) return;
     setIsSaving(true);
     try {
-      // Update Username
-      if (username !== user.displayName) {
-        await updateProfile(user, { displayName: username });
-        await setDoc(doc(db, 'users', user.uid), { displayName: username }, { merge: true });
-      }
-      
-      // Update Password (mock email + mock password)
-      if (password.trim() !== '') {
-        const newEmail = `${password.toLowerCase().replace(/[^a-z0-9]/g, '') || 'default'}@teshan.society`;
-        const newPassword = password + "teshan123";
-        try {
-          await updateEmail(user, newEmail);
-          await updatePassword(user, newPassword);
-          await setDoc(doc(db, 'users', user.uid), { email: newEmail }, { merge: true });
-        } catch (authErr: any) {
-           if (authErr.code === 'auth/requires-recent-login') {
-             alert("Please logout and login again to change your password.");
-           } else {
-             console.error(authErr);
-           }
-        }
-      }
-      
+      await updateUserBio(username, pfpUrl, password || undefined);
       setIsEditing(false);
       setPassword('');
+      onClose();
     } catch (err) {
       console.error(err);
     } finally {
@@ -84,7 +66,7 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose 
     }
   };
 
-  const displayId = user?.uid ? String(user.uid).replace(/\D/g, '').slice(0, 3).padEnd(3, '0') : '000';
+  const displayId = currentUser?.uid ? String(currentUser.uid).replace(/\D/g, '').slice(0, 3).padEnd(3, '0') : '000';
 
   return (
     <AnimatePresence>
@@ -107,7 +89,7 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose 
               md:w-[400px] md:h-full md:top-0 md:bottom-auto md:right-0 md:rounded-tl-[32px] md:rounded-bl-[32px] md:rounded-tr-none md:border-t-0 md:border-l
             "
           >
-             <button onClick={onClose} className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors">
+             <button onClick={onClose} className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors cursor-pointer">
                <X className="w-6 h-6" />
              </button>
 
@@ -158,7 +140,7 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose 
                          <span className="text-white/50 text-sm">Username</span>
                          <div className="flex items-center gap-3">
                             <span className="text-white">{username}</span>
-                            <button onClick={() => setIsEditing(true)} className="text-white/30 hover:text-white transition-colors">
+                            <button onClick={() => setIsEditing(true)} className="text-white/30 hover:text-white transition-colors cursor-pointer">
                                <Pen className="w-4 h-4" />
                             </button>
                          </div>
@@ -167,7 +149,7 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose 
                          <span className="text-white/50 text-sm">Password</span>
                          <div className="flex items-center gap-3">
                             <span className="text-white font-mono tracking-widest">********</span>
-                            <button onClick={() => setIsEditing(true)} className="text-white/30 hover:text-white transition-colors">
+                            <button onClick={() => setIsEditing(true)} className="text-white/30 hover:text-white transition-colors cursor-pointer">
                                <Pen className="w-4 h-4" />
                             </button>
                          </div>
@@ -182,25 +164,25 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose 
                       <button 
                          onClick={handleSave}
                          disabled={isSaving}
-                         className="w-full flex items-center justify-center p-4 bg-white text-black hover:bg-white/90 rounded-2xl font-bold transition-all disabled:opacity-50"
+                         className="w-full flex items-center justify-center p-4 bg-white text-black hover:bg-white/90 rounded-2xl font-bold transition-all disabled:opacity-50 cursor-pointer"
                       >
                          {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : "Save Changes"}
                       </button>
                       <button 
                          onClick={() => {
                             setIsEditing(false);
-                            setUsername(user?.displayName || '');
+                            setUsername(currentUser?.username || '');
                             setPassword('');
                          }}
-                         className="w-full flex items-center justify-center p-4 bg-transparent text-white/50 hover:text-white hover:bg-white/5 rounded-2xl transition-all"
+                         className="w-full flex items-center justify-center p-4 bg-transparent text-white/50 hover:text-white hover:bg-white/5 rounded-2xl transition-all cursor-pointer"
                       >
                          Cancel
                       </button>
                    </>
                 ) : (
                    <button 
-                      onClick={() => signOutUser()}
-                      className="w-full flex items-center justify-center gap-2 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-white/80 hover:text-white transition-all shadow-sm"
+                      onClick={customLogout}
+                      className="w-full flex items-center justify-center gap-2 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-white/80 hover:text-white transition-all shadow-sm cursor-pointer"
                    >
                       <LogOut className="w-5 h-5" />
                       <span>Log Out</span>
@@ -211,4 +193,3 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose 
     </AnimatePresence>
   );
 };
-
